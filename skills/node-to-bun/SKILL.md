@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Read", "Grep", "Write"]
 metadata:
   author: daleseo
   category: bun-runtime
-  tags: [bun, migration, nodejs, node-to-bun, compatibility, dependencies]
+  tags: "bun, migration, nodejs, node-to-bun, compatibility, dependencies"
 ---
 
 # Node.js to Bun Migration

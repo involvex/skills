@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, runtime, native-apis, image, webview, markdown, cron, terminal, redis, sql, archive]
+  tags: "bun, runtime, native-apis, image, webview, markdown, cron, terminal, redis, sql, archive"
 ---
 
 # Bun Native Runtime APIs

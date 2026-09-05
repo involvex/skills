@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, deploy, compile, executable, docker, standalone, production]
+  tags: "bun, deploy, compile, executable, docker, standalone, production"
 ---
 
 # Bun Deployment

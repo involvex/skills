@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, testing, jest, unit-tests, tdd, parallel, coverage]
+  tags: "bun, testing, jest, unit-tests, tdd, parallel, coverage"
 ---
 
 # Bun Test Configuration

@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, javascript, typescript, initialization, setup]
+  tags: "bun, javascript, typescript, initialization, setup"
 ---
 
 # Bun Project Initialization

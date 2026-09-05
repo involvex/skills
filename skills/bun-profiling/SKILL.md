@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, profiling, performance, cpu, heap, memory, debugging]
+  tags: "bun, profiling, performance, cpu, heap, memory, debugging"
 ---
 
 # Bun Profiling & Debugging

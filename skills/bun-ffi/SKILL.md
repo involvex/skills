@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, ffi, dlopen, native, c, pointers, performance]
+  tags: "bun, ffi, dlopen, native, c, pointers, performance"
 ---
 
 # Bun FFI — Foreign Function Interface

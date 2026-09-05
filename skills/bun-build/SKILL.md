@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, build, bundler, production, optimization]
+  tags: "bun, build, bundler, production, optimization"
 ---
 
 # Bun Production Build Configuration

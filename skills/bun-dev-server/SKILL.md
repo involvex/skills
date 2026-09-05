@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, dev-server, hmr, react, hot-reload]
+  tags: "bun, dev-server, hmr, react, hot-reload"
 ---
 
 # Bun Development Server Setup

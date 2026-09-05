@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
   category: bun-runtime
-  tags: [bun, install, dependencies, workspaces, lockfile, linker]
+  tags: "bun, install, dependencies, workspaces, lockfile, linker"
 ---
 
 # Bun Install & Dependency Management
