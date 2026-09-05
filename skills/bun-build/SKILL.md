@@ -1,7 +1,7 @@
 ---
 name: bun-build
 description: Create optimized production bundles with Bun's native bundler. Use when building applications for production, optimizing bundle sizes, setting up multi-environment builds, or replacing webpack/esbuild/rollup.
-compatibility: Requires Bun 1.0+
+compatibility: Requires Bun 1.4+
 allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
@@ -11,14 +11,25 @@ metadata:
 
 # Bun Production Build Configuration
 
-Set up production builds using Bun's native bundler - fast, optimized bundle creation without webpack or esbuild.
+Set up production builds using Bun's native bundler — fast, optimized bundle creation without webpack or esbuild.
+
+## What's new in Bun 1.4
+
+- **Standalone executables**: `Bun.build({ compile: true })` compiles to a standalone binary (1.3.10)
+- **Self-contained HTML**: `--target=browser` produces a self-contained HTML file (1.3.10)
+- **Bundle analysis as Markdown**: `--metafile-md` writes LLM-friendly bundle analysis (1.3.8)
+- **Bytecode compilation**: `--compile --bytecode` for cross-compilation (1.4.1)
+- **Tree-shaking via dynamic import**: dynamic `import()` now participates in tree-shaking
+- **Barrel import optimization**: re-export chains are optimized automatically
+- **Virtual filesystem**: `Bun.build({ files })` injects virtual files into the bundle
+- **Smaller/faster compiled executables**: up to 17% smaller binaries, faster startup
 
 ## Quick Reference
 
 For detailed patterns, see:
-- **Build Targets**: [targets.md](references/targets.md) - Browser, Node.js, library, CLI configurations
-- **Optimization**: [optimization.md](references/optimization.md) - Tree shaking, code splitting, analysis
-- **Plugins**: [plugins.md](references/plugins.md) - Custom loaders and transformations
+- **Build Targets**: [targets.md](references/targets.md) — Browser, Node.js, library, CLI, standalone executable, self-contained HTML
+- **Optimization**: [optimization.md](references/optimization.md) — Tree shaking, code splitting, bundle analysis, size limits
+- **Plugins**: [plugins.md](references/plugins.md) — Custom loaders and transformations
 
 ## Core Workflow
 
@@ -36,9 +47,10 @@ ls -la package.json src/
 
 Ask the user about their build needs:
 
-- **Application Type**: Frontend SPA, Node.js backend, CLI tool, or library
-- **Target Platform**: Browser, Node.js, Bun runtime, or Cloudflare Workers
-- **Output Format**: ESM (modern), CommonJS (legacy), or both
+- **Application Type**: Frontend SPA, Node.js backend, CLI tool, library, or standalone executable
+- **Target Platform**: Browser, Node.js, Bun runtime, Cloudflare Workers, or self-contained HTML
+- **Output Format**: ESM (modern), CommonJS (legacy), IIFE, or standalone binary
+- **Special needs**: Image optimization, markdown bundling, virtual files
 
 ### 3. Create Basic Build Script
 
@@ -111,9 +123,103 @@ await Bun.build({
 });
 ```
 
-**For libraries, CLI tools, and other targets**, see [targets.md](references/targets.md).
+**For libraries, CLI tools, standalone executables, and other targets**, see [targets.md](references/targets.md).
 
-### 5. Add Production Optimizations
+### 5. Standalone Executable (Bun 1.3.10+)
+
+Compile your app to a standalone binary:
+
+```typescript
+#!/usr/bin/env bun
+
+const result = await Bun.build({
+  entrypoints: ['./src/cli.ts'],
+  compile: {
+    target: 'bun',        // 'bun', 'node', 'browser'
+    outfile: './dist/myapp',
+    format: 'esm',
+    minify: true,
+  },
+});
+
+if (!result.success) {
+  console.error('Build failed');
+  process.exit(1);
+}
+
+console.log('✅ Standalone executable built: ./dist/myapp');
+console.log(`📦 Size: ${(result.outputs[0].size / 1024 / 1024).toFixed(1)} MB`);
+```
+
+Run it:
+```bash
+chmod +x ./dist/myapp
+./dist/myapp --help
+```
+
+Cross-compile with bytecode (Bun 1.4.1+):
+```bash
+bun build ./src/cli.ts --compile --bytecode --target=bun-linux-x64 --outfile=myapp
+```
+
+For all compile options and targets, see [targets.md](references/targets.md).
+
+### 6. Self-Contained HTML (Bun 1.3.10+)
+
+Bundle your app into a single self-contained HTML file:
+
+```bash
+bun build ./src/index.tsx --target=browser --outdir=./dist --outfile=app.html
+```
+
+Or in `build.ts`:
+```typescript
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
+  target: 'browser',
+  format: 'iife',
+  minify: true,
+  // Output is a single HTML file when using --target=browser with outfile
+});
+```
+
+### 7. Bundle Analysis (Bun 1.3.8+)
+
+Get LLM-friendly bundle analysis as Markdown:
+
+```bash
+bun build ./src/index.ts --outdir ./dist --metafile-md=./dist/meta.md
+```
+
+Or in `build.ts`:
+```typescript
+const result = await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  minify: true,
+  splitting: true,
+  metafile: true,  // Required for --metafile-md
+});
+
+if (!result.success) {
+  process.exit(1);
+}
+
+// Write Markdown analysis
+await Bun.write(
+  './dist/meta.md',
+  result.metafile
+    ? await Bun.build({ ...options, 'metafile-md': './dist/meta.md' })
+    : 'No metafile available',
+);
+```
+
+The Markdown report shows: largest modules, entry point analysis, dependency chains, and full module graph.
+
+For advanced bundle analysis, see [optimization.md](references/optimization.md).
+
+### 8. Add Production Optimizations
 
 ```typescript
 await Bun.build({
@@ -143,9 +249,9 @@ await Bun.build({
 });
 ```
 
-For advanced optimizations (tree shaking, bundle analysis, size limits), see [optimization.md](references/optimization.md).
+For advanced optimizations (virtual filesystem, tree-shaking via dynamic import, barrel optimization), see [optimization.md](references/optimization.md).
 
-### 6. Environment-Specific Builds
+### 9. Environment-Specific Builds
 
 Create `build-env.ts`:
 
@@ -197,7 +303,7 @@ Run with:
 NODE_ENV=production bun run build-env.ts
 ```
 
-### 7. Update package.json
+### 10. Update package.json
 
 Add build scripts:
 
@@ -208,6 +314,8 @@ Add build scripts:
     "build:dev": "NODE_ENV=development bun run build-env.ts",
     "build:prod": "NODE_ENV=production bun run build-env.ts",
     "build:watch": "bun run build.ts --watch",
+    "build:analyze": "bun run build.ts --metafile-md=./dist/meta.md",
+    "build:exe": "bun run build-exe.ts",
     "clean": "rm -rf dist"
   }
 }
@@ -232,7 +340,7 @@ Add build scripts:
 }
 ```
 
-### 8. Generate Type Declarations (Libraries)
+### 11. Generate Type Declarations (Libraries)
 
 For libraries, generate TypeScript declarations:
 
@@ -250,7 +358,7 @@ await Bun.build({
 });
 
 // Generate type declarations
-await $`bunx tsc --declaration --emitDeclarationOnly --outDir dist`;
+await $`tsc --declaration --emitDeclarationOnly --outDir dist`;
 
 console.log('✅ Built library with type declarations');
 ```
@@ -262,12 +370,25 @@ console.log('✅ Built library with type declarations');
 - **`browser`**: For web applications (includes browser globals)
 - **`node`**: For Node.js applications (assumes Node.js APIs)
 - **`bun`**: For Bun runtime (optimized for Bun-specific features)
+- **`bun-linux-x64`**, **`bun-linux-arm64`**, **`bun-darwin-arm64`**, etc.: For standalone executables
 
 ### Format
 
-- **`esm`**: ES Modules (modern, tree-shakeable) - Recommended
+- **`esm`**: ES Modules (modern, tree-shakeable) — Recommended
 - **`cjs`**: CommonJS (legacy Node.js)
 - **`iife`**: Immediately Invoked Function Expression (browser scripts)
+
+### Compile Options (Bun 1.3.10+)
+
+```typescript
+compile: {
+  target: 'bun',           // 'bun' | 'node' | 'browser'
+  outfile: './dist/app',   // Output file path
+  format: 'esm',           // Output format
+  minify: true,            // Minify output
+  bytecode: false,         // Compile to bytecode (1.4.1+)
+}
+```
 
 ### Minification
 
@@ -286,6 +407,36 @@ minify: {                     // Granular control
 - **`inline`**: Inline in bundle (development)
 - **`none`**: No source maps
 
+### Virtual Filesystem (Bun 1.3.6+)
+
+Inject virtual files into the bundle:
+
+```typescript
+await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  files: {
+    './version.txt': '1.0.0',
+    './config.json': JSON.stringify({ api: 'https://api.example.com' }),
+  },
+});
+```
+
+### Bundle Analysis
+
+```typescript
+await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  metafile: true,  // Generate metafile for analysis
+});
+```
+
+Or via CLI:
+```bash
+bun build ./src/index.ts --outdir ./dist --metafile-md=./dist/meta.md
+```
+
 ## Verification
 
 After building:
@@ -302,6 +453,9 @@ bun run dist/index.js
 
 # 4. Check for errors
 echo $?  # Should be 0
+
+# 5. View bundle analysis (if generated)
+cat dist/meta.md
 ```
 
 ## Common Build Patterns
@@ -337,6 +491,7 @@ loader: {
   '.svg': 'dataurl',  // Inline as data URL
   '.txt': 'text',     // Inline as string
   '.json': 'json',    // Parse and inline
+  '.md': 'text',      // Inline markdown as string
 }
 ```
 
@@ -355,9 +510,9 @@ if (!result.success) {
 
 **Bundle too large:**
 See [optimization.md](references/optimization.md) for:
-- Bundle analysis
+- Bundle analysis with `--metafile-md`
 - Code splitting
-- Tree shaking
+- Tree shaking through dynamic import
 - Size limits
 
 **Module not found:**
@@ -366,6 +521,15 @@ Check `external` configuration:
 external: ['*']         // Exclude all node_modules
 external: ['react']     // Exclude specific packages
 external: []            // Bundle everything
+```
+
+**Compiled executable too large:**
+```typescript
+compile: {
+  target: 'bun',
+  bytecode: true,  // Use bytecode for smaller size
+  minify: true,
+}
 ```
 
 ## Completion Checklist
@@ -378,15 +542,18 @@ external: []            // Bundle everything
 - ✅ Package.json scripts added
 - ✅ Build tested successfully
 - ✅ Bundle size verified
+- ✅ Bundle analysis generated (if applicable)
 
 ## Next Steps
 
 After basic build setup:
 
-1. **Optimization**: Add bundle analysis and size limits
-2. **CI/CD**: Automate builds in your pipeline
-3. **Type Checking**: Add pre-build type checking
-4. **Testing**: Run tests before building
-5. **Deployment**: Integrate with bun-deploy for containerization
+1. **Standalone executable**: Add `--compile` for CLI tools
+2. **Self-contained HTML**: Use `--target=browser` for single-file demos
+3. **Optimization**: Add bundle analysis and size limits
+4. **CI/CD**: Automate builds in your pipeline
+5. **Type Checking**: Add pre-build type checking
+6. **Testing**: Run tests before building
+7. **Deployment**: Integrate with containerization
 
 For detailed implementations, see the reference files linked above.

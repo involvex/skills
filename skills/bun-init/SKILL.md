@@ -1,7 +1,7 @@
 ---
 name: bun-init
 description: Initialize a new Bun project with TypeScript and optimal configuration. Use when starting a new Bun project or converting a directory to a Bun project.
-compatibility: Requires Bun 1.0+
+compatibility: Requires Bun 1.4+
 allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
@@ -11,9 +11,17 @@ metadata:
 
 # Bun Project Initialization
 
-You are assisting with initializing a new Bun project. Follow these steps to create a well-structured project with optimal configurations.
+Initialize a new Bun project with TypeScript and optimal configuration for Bun 1.4+.
 
-## Workflow
+## What's new in Bun 1.4
+
+- `bun init --react` flag for React projects (1.2.14)
+- `bun init` generates `CLAUDE.md` when Claude Code is installed (1.2.17)
+- New project templates for CLI, web app, API server, library
+- `@types/bun` replaces the old `bun-types` package
+- TypeScript 5.x with `verbatimModuleSyntax`, `noImplicitOverride`
+
+## Core Workflow
 
 ### 1. Check Prerequisites
 
@@ -25,16 +33,7 @@ bun --version
 
 If Bun is not installed, provide installation instructions for the user's platform.
 
-### 2. Determine Project Type
-
-Ask the user which type of project they want to create:
-
-- **CLI Tool**: Command-line application with bin entry point
-- **Web App**: Frontend application with React/Vue/etc
-- **API Server**: Backend API with routing framework
-- **Library**: Reusable package for publishing to npm
-
-### 3. Run Bun Init
+### 2. Run Bun Init
 
 Execute the initialization command:
 
@@ -48,7 +47,7 @@ This creates:
 - `index.ts` as the entry point
 - `README.md` with basic project info
 
-### 4. Enhance TypeScript Configuration
+### 3. Enhance TypeScript Configuration
 
 Read the generated `tsconfig.json` and enhance it based on project type:
 
@@ -59,13 +58,15 @@ Read the generated `tsconfig.json` and enhance it based on project type:
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true
   }
 }
 ```
@@ -79,13 +80,15 @@ Read the generated `tsconfig.json` and enhance it based on project type:
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true
   }
 }
 ```
@@ -97,13 +100,15 @@ Read the generated `tsconfig.json` and enhance it based on project type:
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true,
     "paths": {
       "@/*": ["./src/*"]
     }
@@ -118,7 +123,7 @@ Read the generated `tsconfig.json` and enhance it based on project type:
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "strict": true,
     "declaration": true,
     "declarationMap": true,
@@ -126,12 +131,14 @@ Read the generated `tsconfig.json` and enhance it based on project type:
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true
   }
 }
 ```
 
-### 5. Create Project Structure
+### 4. Create Project Structure
 
 Generate appropriate directory structure and files:
 
@@ -171,7 +178,7 @@ Update `package.json` to add bin field:
 }
 ```
 
-**Web App:**
+**Web App (with React):**
 ```
 project/
 ├── src/
@@ -231,7 +238,7 @@ project/
 └── README.md
 ```
 
-### 6. Create .gitignore
+### 5. Create .gitignore
 
 Generate a comprehensive `.gitignore`:
 
@@ -272,10 +279,9 @@ coverage/
 .nyc_output/
 ```
 
-### 7. Create Environment Template
+### 6. Create Environment Template
 
 Create `.env.example`:
-
 ```bash
 # Application
 NODE_ENV=development
@@ -286,7 +292,7 @@ PORT=3000
 # API_KEY=
 ```
 
-### 8. Update package.json Scripts
+### 7. Update package.json Scripts
 
 Add project-type-specific scripts:
 
@@ -338,7 +344,7 @@ Add project-type-specific scripts:
 }
 ```
 
-### 9. Install Common Dependencies
+### 8. Install Common Dependencies
 
 Suggest installing common dependencies based on project type:
 
@@ -365,10 +371,9 @@ bun add -d @types/node
 # No default dependencies - user will add as needed
 ```
 
-### 10. Create Initial Test File
+### 9. Create Initial Test File
 
 Create a basic test file in `tests/`:
-
 ```typescript
 import { describe, expect, test } from "bun:test";
 
@@ -379,13 +384,35 @@ describe("Initial test", () => {
 });
 ```
 
+### 10. React Project Shortcut (Bun 1.2.14+)
+
+For React projects, use the `--react` flag:
+
+```bash
+bun init --react -y
+```
+
+This creates a project pre-configured with React, JSX support, and appropriate dependencies.
+
+### 11. Workspace Configuration (Monorepo)
+
+For monorepos with workspaces:
+
+```json
+{
+  "workspaces": ["packages/*", "apps/*"]
+}
+```
+
+Bun supports the same workspace syntax as npm/yarn/pnpm.
+
 ## Post-Initialization Checklist
 
 After completing the setup, provide the user with:
 
-1. ✅ Confirmation of project type created
-2. ✅ List of generated files and directories
-3. ✅ Next steps:
+1. Confirmation of project type created
+2. List of generated files and directories
+3. Next steps:
    - Copy `.env.example` to `.env` and configure
    - Run `bun install` if dependencies were suggested
    - Run `bun dev` to start development
@@ -394,21 +421,14 @@ After completing the setup, provide the user with:
 ## Key Configuration Principles
 
 - **Module Resolution**: Use `"moduleResolution": "bundler"` for Bun's native resolution
-- **TypeScript Types**: Always include `"types": ["bun-types"]`
+- **TypeScript Types**: Always include `"types": ["@types/bun"]` (not `"bun-types"`)
 - **No Emit**: Set `"noEmit": true` since Bun runs TypeScript directly
 - **Import Extensions**: Enable `"allowImportingTsExtensions": true` for `.ts` imports
 - **Strict Mode**: Enable strict TypeScript checks for better code quality
+- **Verbatim Module Syntax**: Use `"verbatimModuleSyntax": true` for cleaner ESM/CJS interop
+- **No Implicit Override**: Use `"noImplicitOverride": true` for safer inheritance
 
 ## Common Adjustments
-
-**If user wants workspaces (monorepo):**
-
-Add to `package.json`:
-```json
-{
-  "workspaces": ["packages/*"]
-}
-```
 
 **If user wants path aliases:**
 

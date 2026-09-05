@@ -146,6 +146,25 @@ it("should restore original implementation", () => {
 });
 ```
 
+## Global `vi` (Bun 1.3.1+)
+
+Bun test exposes a global `vi` object compatible with vitest:
+
+```typescript
+test("should use vi", () => {
+  const mockFn = vi.fn(() => "mocked");
+  mockFn();
+  expect(mockFn).toHaveBeenCalled();
+});
+
+test("should use vi.spyOn", () => {
+  const obj = { method: () => "original" };
+  const spy = vi.spyOn(obj, 'method').mockReturnValue("mocked");
+  expect(obj.method()).toBe("mocked");
+  spy.mockRestore();
+});
+```
+
 ## Module Mocking
 
 ### Manual Module Mocks
@@ -349,18 +368,34 @@ it("should mock API calls", async () => {
 });
 ```
 
-### Timer Mocking
+### Timer Mocking with `useFakeTimers` (Bun 1.3.4+)
 
 ```typescript
+import { useFakeTimers } from "bun:test";
+
 it("should test delayed operations", async () => {
+  const clock = useFakeTimers();
   const callback = mock();
 
   setTimeout(callback, 1000);
 
-  // Wait for timer
-  await new Promise(resolve => setTimeout(resolve, 1100));
+  // Fast-forward 1 second
+  clock.tick(1000);
 
   expect(callback).toHaveBeenCalled();
+
+  clock.restore();
+});
+```
+
+### Retry Flaky Tests (Bun 1.3.9+)
+
+```typescript
+it("should retry on failure", async () => {
+  test.retry(3); // Retry up to 3 times
+
+  const result = await fetchFromFlakyService();
+  expect(result).toBeDefined();
 });
 ```
 
@@ -371,6 +406,7 @@ it("should test delayed operations", async () => {
 3. **Verify behavior**: Use `.toHaveBeenCalledWith()` to ensure correct arguments
 4. **Don't over-mock**: Only mock what's necessary for the test
 5. **Use type-safe mocks**: Leverage TypeScript for mock definitions
+6. **Prefer dependency injection**: Makes mocking easier without `jest.mock()`
 
 ## Common Patterns
 

@@ -53,6 +53,81 @@ export default { foo, bar, baz };
 export { foo, bar, baz };
 ```
 
+### Dynamic Import Tree Shaking (Bun 1.4+)
+
+Dynamic `import()` now participates in tree-shaking. Use it for code splitting:
+
+```typescript
+// Dynamic imports are analyzed for tree-shaking
+async function loadFeature() {
+  const module = await import('./heavy-feature.ts');
+  return module.doWork();
+}
+
+// Only loaded modules are included in the bundle
+// Unused dynamic imports are tree-shaken
+```
+
+### Barrel Import Optimization (Bun 1.4+)
+
+Re-export chains (barrel files) are optimized automatically:
+
+```typescript
+// index.ts - barrel file
+export { foo } from './foo';
+export { bar } from './bar';
+export { baz } from './baz';
+
+// Bun automatically optimizes the import chain
+// No need for manual re-export optimization
+```
+
+## Bundle Analysis with Markdown (Bun 1.3.8+)
+
+Generate LLM-friendly bundle analysis as Markdown:
+
+```bash
+# CLI
+bun build ./src/index.ts --outdir ./dist --metafile-md=./dist/meta.md
+```
+
+```typescript
+// build-analyze.ts
+const result = await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  minify: true,
+  splitting: true,
+  sourcemap: 'external',
+  metafile: true, // Required for metafile-md
+});
+
+if (result.success && result.metafile) {
+  // Write Markdown analysis
+  await Bun.write('./dist/meta.md', result.metafile);
+}
+```
+
+The Markdown report includes:
+- **Largest Modules**: Top contributors to bundle size
+- **Entry Point Analysis**: What each entry point loads
+- **Dependency Chains**: Why each module is included
+- **Full Module Graph**: Complete dependency information
+
+Example output:
+```markdown
+# Bundle Analysis Report
+
+## Quick Summary
+| Metric | Value |
+| Total output size | 56.1 KB |
+
+## Largest Modules by Output Contribution
+| Output Bytes | % of Total | Module |
+| 55.74 KB | 99.4% | `node_modules/marked/lib/marked.esm.js` |
+| 113 bytes | 0.2% | `src/escape.ts` |
+```
+
 ## Minification
 
 ### Basic Minification
@@ -97,7 +172,8 @@ await Bun.build({
     '.svg': 'dataurl',  // Inline as data URL
     '.css': 'css',      // Process as CSS
     '.txt': 'text',     // Inline as string
-    '.json': 'json',    // Inline as JSON
+    '.json': 'json',    // Inline and parse JSON
+    '.md': 'text',      // Inline markdown (Bun 1.3.8+)
   },
 
   // Public path for assets
@@ -105,82 +181,19 @@ await Bun.build({
 });
 ```
 
-## Bundle Analysis
+## Virtual Filesystem (Bun 1.3.6+)
 
-Create `build-analyze.ts`:
+Inject virtual files into the bundle:
 
 ```typescript
-#!/usr/bin/env bun
-
-const result = await Bun.build({
+await Bun.build({
   entrypoints: ['./src/index.ts'],
   outdir: './dist',
-  target: 'browser',
-  minify: true,
-  splitting: true,
-  sourcemap: 'external',
+  files: {
+    './version.txt': '1.0.0',
+    './config.json': JSON.stringify({ api: 'https://api.example.com' }),
+  },
 });
-
-// Analyze bundle sizes
-interface BundleAnalysis {
-  total: number;
-  byType: Record<string, { size: number; count: number }>;
-  largest: Array<{ path: string; size: number }>;
-}
-
-const analysis: BundleAnalysis = {
-  total: 0,
-  byType: {},
-  largest: [],
-};
-
-for (const output of result.outputs) {
-  const size = output.size;
-  const ext = output.path.split('.').pop() || 'unknown';
-
-  analysis.total += size;
-
-  if (!analysis.byType[ext]) {
-    analysis.byType[ext] = { size: 0, count: 0 };
-  }
-
-  analysis.byType[ext].size += size;
-  analysis.byType[ext].count++;
-
-  analysis.largest.push({
-    path: output.path,
-    size: size,
-  });
-}
-
-// Sort by size
-analysis.largest.sort((a, b) => b.size - a.size);
-analysis.largest = analysis.largest.slice(0, 10);
-
-// Report
-console.log('\n📊 Bundle Analysis\n');
-console.log(`Total Size: ${(analysis.total / 1024).toFixed(2)} KB`);
-console.log(`Files: ${result.outputs.length}\n`);
-
-console.log('By Type:');
-for (const [type, data] of Object.entries(analysis.byType)) {
-  const sizeKB = (data.size / 1024).toFixed(2);
-  console.log(`  ${type}: ${sizeKB} KB (${data.count} files)`);
-}
-
-console.log('\nLargest Files:');
-for (const file of analysis.largest) {
-  const sizeKB = (file.size / 1024).toFixed(2);
-  const name = file.path.split('/').pop();
-  console.log(`  ${name}: ${sizeKB} KB`);
-}
-
-// Check size limits
-const MAX_BUNDLE_SIZE = 500 * 1024; // 500 KB
-if (analysis.total > MAX_BUNDLE_SIZE) {
-  console.warn('\n⚠️  Warning: Bundle exceeds 500 KB');
-  process.exit(1);
-}
 ```
 
 ## Environment-Specific Builds
@@ -252,6 +265,8 @@ NODE_ENV=production bun run build-env.ts
 3. **Externalize dependencies**: Don't bundle node_modules for backend
 4. **Use proper loaders**: 'dataurl' for small files, 'file' for large
 5. **Enable minification**: Only in production
+6. **Use --metafile-md**: Analyze bundle bloat with LLM-friendly output
+7. **Leverage tree-shaking**: Use named exports and dynamic imports strategically
 
 ## Watch Mode
 
@@ -314,3 +329,24 @@ if (totalSize > MAX_SIZES.total) {
   process.exit(1);
 }
 ```
+
+## Standalone Executable Optimization (Bun 1.3.10+)
+
+For CLI tools, compile to a standalone binary:
+
+```typescript
+const result = await Bun.build({
+  entrypoints: ['./src/cli.ts'],
+  compile: {
+    target: 'bun',
+    outfile: './dist/myapp',
+    format: 'esm',
+    minify: true,
+    bytecode: false, // Set true for smaller size (1.4.1+)
+  },
+});
+```
+
+- Binaries are up to 17% smaller in Bun 1.4
+- Startup is 50% faster on Windows, 2× faster on Linux
+- Use `--bytecode` for additional size reduction (cross-compilation support in 1.4.1)

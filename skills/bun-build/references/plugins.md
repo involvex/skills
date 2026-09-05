@@ -48,6 +48,78 @@ await Bun.build({
 });
 ```
 
+## Example: Markdown Plugin (Bun 1.3.8+)
+
+Use `Bun.markdown` to process Markdown files at build time:
+
+```typescript
+import type { BunPlugin } from 'bun';
+
+const markdownPlugin: BunPlugin = {
+  name: 'markdown',
+  setup(build) {
+    build.onLoad({ filter: /\.md$/ }, async (args) => {
+      const markdown = await Bun.file(args.path).text();
+
+      // Use built-in Bun.markdown
+      const html = Bun.markdown.html(markdown);
+
+      return {
+        contents: `export default ${JSON.stringify(html)}`,
+        loader: 'js',
+      };
+    });
+  },
+};
+
+await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  plugins: [markdownPlugin],
+});
+```
+
+For custom rendering, use `Bun.markdown.render()`:
+```typescript
+const ansi = Bun.markdown.render(markdown, {
+  heading: (children) => `\x1b[1;4m${children}\x1b[0m\n`,
+  paragraph: (children) => children + "\n",
+  strong: (children) => `\x1b[1m${children}\x1b[22m`,
+});
+```
+
+## Example: Image Optimization Plugin (Bun 1.3.14+)
+
+Use `Bun.Image` for image processing at build time:
+
+```typescript
+import type { BunPlugin } from 'bun';
+
+const imageOptimizePlugin: BunPlugin = {
+  name: 'image-optimize',
+  setup(build) {
+    build.onLoad({ filter: /\.(png|jpg|jpeg|webp)$/ }, async (args) => {
+      // Use Bun.Image for optimization
+      const image = new Bun.Image(await Bun.file(args.path).arrayBuffer());
+
+      // Resize and convert
+      const optimized = await image.resize(800, 600, { fit: 'inside' })
+        .webp({ quality: 85 })
+        .arrayBuffer();
+
+      // Write optimized file
+      const outputPath = args.path.replace(/src/, 'dist').replace(/\.\w+$/, '.webp');
+      await Bun.write(outputPath, optimized);
+
+      return {
+        contents: `export default ${JSON.stringify(outputPath)}`,
+        loader: 'js',
+      };
+    });
+  },
+};
+```
+
 ## Example: Banner/Footer Plugin
 
 ```typescript
@@ -129,83 +201,6 @@ function hash(str: string): string {
 }
 ```
 
-## Example: Image Optimization Plugin
-
-```typescript
-const imageOptimizePlugin: BunPlugin = {
-  name: 'image-optimize',
-  setup(build) {
-    build.onLoad({ filter: /\.(png|jpg|jpeg)$/ }, async (args) => {
-      // Use sharp or other image library to optimize
-      const buffer = await Bun.file(args.path).arrayBuffer();
-
-      // Placeholder: In real implementation, optimize image
-      const optimized = buffer;
-
-      // Write optimized file
-      const outputPath = args.path.replace(/src/, 'dist');
-      await Bun.write(outputPath, optimized);
-
-      return {
-        contents: `export default ${JSON.stringify(outputPath)}`,
-        loader: 'js',
-      };
-    });
-  },
-};
-```
-
-## Example: TypeScript Path Alias Plugin
-
-```typescript
-const pathAliasPlugin: BunPlugin = {
-  name: 'path-alias',
-  setup(build) {
-    const aliases = {
-      '@/': './src/',
-      '@components/': './src/components/',
-      '@utils/': './src/utils/',
-    };
-
-    build.onResolve({ filter: /^@\// }, (args) => {
-      for (const [alias, path] of Object.entries(aliases)) {
-        if (args.path.startsWith(alias)) {
-          return {
-            path: args.path.replace(alias, path),
-          };
-        }
-      }
-    });
-  },
-};
-```
-
-## Example: Markdown Plugin
-
-```typescript
-const markdownPlugin: BunPlugin = {
-  name: 'markdown',
-  setup(build) {
-    build.onLoad({ filter: /\.md$/ }, async (args) => {
-      const markdown = await Bun.file(args.path).text();
-
-      // Use markdown parser (simplified)
-      const html = markdownToHtml(markdown);
-
-      return {
-        contents: `export default ${JSON.stringify(html)}`,
-        loader: 'js',
-      };
-    });
-  },
-};
-
-function markdownToHtml(md: string): string {
-  // Simplified - use marked or similar in production
-  return md.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-}
-```
-
 ## Example: JSON Import with Validation
 
 ```typescript
@@ -234,6 +229,31 @@ const jsonSchemaPlugin: BunPlugin = {
         contents: `export default ${JSON.stringify(json)}`,
         loader: 'js',
       };
+    });
+  },
+};
+```
+
+## Example: TypeScript Path Alias Plugin
+
+```typescript
+const pathAliasPlugin: BunPlugin = {
+  name: 'path-alias',
+  setup(build) {
+    const aliases = {
+      '@/': './src/',
+      '@components/': './src/components/',
+      '@utils/': './src/utils/',
+    };
+
+    build.onResolve({ filter: /^@\// }, (args) => {
+      for (const [alias, path] of Object.entries(aliases)) {
+        if (args.path.startsWith(alias)) {
+          return {
+            path: args.path.replace(alias, path),
+          };
+        }
+      }
     });
   },
 };
@@ -295,6 +315,7 @@ const safePlugin: BunPlugin = {
 3. **Use specific filters**: Don't match more files than necessary
 4. **Cache when possible**: Avoid redundant work
 5. **Document dependencies**: List any required packages
+6. **Prefer Bun native APIs**: Use `Bun.markdown`, `Bun.Image`, `Bun.hash` instead of npm packages when possible
 
 ## Testing Plugins
 

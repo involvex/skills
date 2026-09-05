@@ -26,7 +26,7 @@ await Bun.build({
   loader: {
     '.png': 'file',
     '.jpg': 'file',
-    '.svg': 'file',
+    '.svg': 'dataurl',
     '.css': 'css',
   },
 });
@@ -80,7 +80,6 @@ console.log('✅ Built ESM and CJS formats');
 ```
 
 Update `package.json`:
-
 ```json
 {
   "type": "module",
@@ -120,7 +119,6 @@ console.log('✅ CLI built and made executable');
 ```
 
 Update `package.json`:
-
 ```json
 {
   "bin": {
@@ -157,13 +155,81 @@ await Bun.build({
 });
 ```
 
+## Standalone Executable (Bun 1.3.10+)
+
+Compile to a standalone binary:
+
+```typescript
+// build-exe.ts
+const result = await Bun.build({
+  entrypoints: ['./src/cli.ts'],
+  compile: {
+    target: 'bun',           // 'bun' | 'node' | 'browser'
+    outfile: './dist/myapp', // Output binary path
+    format: 'esm',
+    minify: true,
+    bytecode: false,         // true for bytecode compilation (1.4.1+)
+  },
+});
+
+if (!result.success) {
+  console.error('❌ Build failed');
+  process.exit(1);
+}
+
+console.log('✅ Standalone executable built: ./dist/myapp');
+console.log(`📦 Size: ${(result.outputs[0].size / 1024 / 1024).toFixed(1)} MB`);
+```
+
+Cross-compile with bytecode (Bun 1.4.1+):
+```bash
+# Compile for a different platform
+bun build ./src/cli.ts --compile --target=bun-linux-x64 --outfile=myapp-linux
+
+# Compile with bytecode for smaller size
+bun build ./src/cli.ts --compile --bytecode --target=bun-darwin-arm64 --outfile=myapp-mac
+```
+
+Available targets:
+- `bun` — Current platform
+- `bun-linux-x64`, `bun-linux-arm64`
+- `bun-darwin-arm64`, `bun-darwin-x64`
+- `bun-windows-x64`, `bun-windows-arm64`
+- `bun-android-arm64`, `bun-android-x64`
+- `node` — Node.js standalone
+- `browser` — Self-contained HTML
+
+## Self-Contained HTML (Bun 1.3.10+)
+
+Bundle your app into a single self-contained HTML file:
+
+```bash
+# CLI
+bun build ./src/index.tsx --target=browser --outdir=./dist --outfile=app.html
+```
+
+```typescript
+// build-html.ts
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
+  target: 'browser',
+  format: 'iife',
+  minify: true,
+});
+```
+
+When using `--target=browser` with an `outfile`, Bun produces a single self-contained HTML file with all assets embedded.
+
 ## Target Comparison
 
-| Target | Use Case | Node APIs | Browser APIs | Bun APIs |
-|--------|----------|-----------|--------------|----------|
-| `browser` | Frontend apps | ❌ | ✅ | ❌ |
-| `node` | Backend apps | ✅ | ❌ | ❌ |
-| `bun` | Bun-specific apps | ✅ | ❌ | ✅ |
+| Target | Use Case | Node APIs | Browser APIs | Bun APIs | Output |
+|--------|----------|-----------|--------------|----------|--------|
+| `browser` | Frontend apps | ❌ | ✅ | ❌ | JS/CSS/assets |
+| `node` | Backend apps | ✅ | ❌ | ❌ | JS |
+| `bun` | Bun-specific apps | ✅ | ❌ | ✅ | JS |
+| `bun-*` | Standalone executable | ✅ | ❌ | ✅ | Binary |
+| `browser` + outfile | Self-contained HTML | ❌ | ✅ | ❌ | Single HTML |
 
 ## Format Options
 
@@ -209,3 +275,21 @@ Output:
   // Your code
 })();
 ```
+
+## Virtual Filesystem (Bun 1.3.6+)
+
+Inject virtual files into the bundle without creating them on disk:
+
+```typescript
+await Bun.build({
+  entrypoints: ['./src/index.ts'],
+  outdir: './dist',
+  files: {
+    './version.txt': '1.0.0',
+    './config.json': JSON.stringify({ api: 'https://api.example.com' }),
+    './README.md': await Bun.file('./README.md').text(),
+  },
+});
+```
+
+These files are accessible via `import` or `Bun.file` at runtime.

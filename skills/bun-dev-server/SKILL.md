@@ -1,7 +1,7 @@
 ---
 name: bun-dev-server
 description: Set up high-performance development servers with Hot Module Replacement. Use when creating dev servers for web apps, setting up React Fast Refresh, or configuring API servers with live reload.
-compatibility: Requires Bun 1.0+
+compatibility: Requires Bun 1.4+
 allowed-tools: ["Bash", "Write", "Read"]
 metadata:
   author: dale
@@ -11,9 +11,26 @@ metadata:
 
 # Bun Development Server Setup
 
-You are assisting with setting up a high-performance development server using Bun.serve with Hot Module Replacement (HMR) and React Fast Refresh.
+Set up high-performance development servers using `Bun.serve` with built-in HMR, React Fast Refresh, and native Bun 1.4 features.
 
-## Workflow
+## What's new in Bun 1.4
+
+- **Built-in HMR**: `bun run --hot` handles HMR natively — no custom WebSocket code needed
+- **`routes` in `Bun.serve`** (1.2.16): Declarative file-based routing for static files
+- **HTTP/2 support**: `Bun.serve({ http: { ... } })` for HTTP/2 with TLS
+- **Backpressure**: `ReadableStream` request/response bodies auto-pause when sockets fill
+- **`WebSocket.pause()`/`resume()`** (1.4.1): Control WebSocket message flow
+- **`Bun.Terminal`** (1.3.5, improved 1.4.0): Built-in PTY for driving terminal apps
+- **50% faster startup on Windows**, lower memory usage
+- **Native streams**: `ReadableStream`/`WritableStream` up to 7× faster
+
+## Quick Reference
+
+For detailed patterns, see:
+- **HMR Examples**: [hmr-examples.md](references/hmr-examples.md) — Built-in HMR, custom HMR, CSS HMR, framework-specific patterns
+- **Advanced patterns**: `Bun.Terminal`, HTTP/2, backpressure, WebSocket pause/resume
+
+## Core Workflow
 
 ### 1. Determine Server Type
 
@@ -23,6 +40,7 @@ Ask the user what type of development server they need:
 - **API Server**: REST/GraphQL API with auto-reload
 - **Full-Stack App**: Frontend + API combined
 - **Static Server**: File server with live reload
+- **Terminal App**: PTY-driven terminal in the browser
 
 ### 2. Check Prerequisites
 
@@ -57,85 +75,40 @@ bun add -d @types/react @types/react-dom
 
 ### 4. Create Server Configuration
 
-#### React Development Server
+#### React Development Server (with built-in HMR)
 
 Create `server.ts` in the project root:
 
 ```typescript
-import type { ServerWebSocket } from "bun";
+import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
 
-const clients = new Set<ServerWebSocket<unknown>>();
+const app = new Hono();
+
+// Serve static files from public/
+app.use('/*', serveStatic({ root: './public' }));
+
+// SPA fallback — serve index.html for all non-file routes
+app.get('*', (c) => c.html(Bun.file('public/index.html')));
 
 const server = Bun.serve({
   port: 3000,
-
-  async fetch(request, server) {
-    const url = new URL(request.url);
-
-    // WebSocket for HMR
-    if (url.pathname === "/_hmr") {
-      const upgraded = server.upgrade(request);
-      if (upgraded) return undefined;
-      return new Response("WebSocket upgrade failed", { status: 500 });
-    }
-
-    // Serve index.html for SPA routing
-    if (url.pathname === "/" || !url.pathname.includes(".")) {
-      return new Response(
-        Bun.file("public/index.html"),
-        { headers: { "Content-Type": "text/html" } }
-      );
-    }
-
-    // Serve static files
-    const filePath = `public${url.pathname}`;
-    const file = Bun.file(filePath);
-
-    if (await file.exists()) {
-      return new Response(file);
-    }
-
-    return new Response("Not Found", { status: 404 });
-  },
-
-  websocket: {
-    open(ws) {
-      clients.add(ws);
-      console.log("HMR client connected");
-    },
-
-    close(ws) {
-      clients.delete(ws);
-      console.log("HMR client disconnected");
-    },
-
-    message(ws, message) {
-      // Handle client messages if needed
-    },
-  },
+  fetch: app.fetch,
 });
 
 console.log(`🚀 Dev server running at http://localhost:${server.port}`);
-
-// Watch for file changes
-const watcher = Bun.file.watch(import.meta.dir + "/src", {
-  recursive: true,
-});
-
-for await (const event of watcher) {
-  if (event.kind === "change" && event.path.endsWith(".tsx")) {
-    console.log(`📝 File changed: ${event.path}`);
-
-    // Notify all connected clients to reload
-    for (const client of clients) {
-      client.send(JSON.stringify({ type: "reload" }));
-    }
-  }
-}
 ```
 
-Create `public/index.html`:
+Start with HMR:
+```bash
+bun run --hot server.ts
+```
 
+**Bun's `--hot` flag handles HMR automatically** — no custom WebSocket code needed. It watches for file changes and reloads the browser. For React, React Fast Refresh works out of the box.
+
+> **Note**: The old pattern of manually implementing HMR with WebSockets and `Bun.file.watch()` is no longer necessary. `bun run --hot` is the recommended approach. See [hmr-examples.md](references/hmr-examples.md) for the legacy pattern and advanced customization.
+
+Create `public/index.html`:
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -147,31 +120,11 @@ Create `public/index.html`:
 <body>
   <div id="root"></div>
   <script type="module" src="/src/index.tsx"></script>
-
-  <!-- HMR Client -->
-  <script>
-    const ws = new WebSocket('ws://localhost:3000/_hmr');
-
-    ws.addEventListener('message', (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'reload') {
-        console.log('🔄 Reloading...');
-        window.location.reload();
-      }
-    });
-
-    ws.addEventListener('close', () => {
-      console.log('❌ HMR connection lost. Reconnecting...');
-      setTimeout(() => window.location.reload(), 1000);
-    });
-  </script>
 </body>
 </html>
 ```
 
 Create `src/index.tsx`:
-
 ```typescript
 import { render } from 'react-dom';
 import App from './App';
@@ -181,7 +134,6 @@ render(<App />, root);
 ```
 
 Create `src/App.tsx`:
-
 ```typescript
 export default function App() {
   return (
@@ -196,7 +148,6 @@ export default function App() {
 #### API Server with Hono
 
 Create `server.ts`:
-
 ```typescript
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -235,7 +186,6 @@ console.log(`🚀 API server running at http://localhost:${server.port}`);
 #### Full-Stack Server
 
 Create `server.ts`:
-
 ```typescript
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -264,39 +214,120 @@ const server = Bun.serve({
 console.log(`🚀 Full-stack server at http://localhost:${server.port}`);
 ```
 
-### 5. Configure React Fast Refresh (Advanced)
+#### Terminal App with Bun.Terminal (Bun 1.3.5+)
 
-For true React Fast Refresh, create `hmr-runtime.ts`:
+Drive a terminal emulator in the browser:
 
 ```typescript
-// React Fast Refresh runtime
-let timeout: Timer | null = null;
+const server = Bun.serve({
+  port: 3000,
+  fetch(req, server) {
+    const url = new URL(req.url);
 
-export function refresh() {
-  if (timeout) clearTimeout(timeout);
+    // WebSocket for terminal
+    if (url.pathname === '/terminal') {
+      const upgraded = server.upgrade(req);
+      if (upgraded) return undefined;
+    }
 
-  timeout = setTimeout(() => {
-    // Re-import the App component
-    import('./App.tsx?t=' + Date.now()).then((module) => {
-      const { render } = require('react-dom');
-      const root = document.getElementById('root');
-      render(module.default(), root);
-    });
-  }, 100);
-}
+    return new Response(Bun.file('public/terminal.html'));
+  },
 
-// Listen for HMR events
-if (import.meta.hot) {
-  import.meta.hot.accept(() => {
-    refresh();
-  });
-}
+  websocket: {
+    open(ws) {
+      // Spawn a PTY when client connects
+      const proc = Bun.spawn(['bash'], {
+        terminal: {
+          cols: 80,
+          rows: 24,
+          data(term, data) {
+            ws.send(data);
+          },
+        },
+      });
+
+      ws.data.pty = proc;
+
+      ws.addEventListener('message', (event) => {
+        proc.terminal?.write(event.data as string);
+      });
+    },
+
+    close(ws) {
+      ws.data.pty?.kill();
+    },
+  },
+});
 ```
 
-### 6. Environment Configuration
+See [hmr-examples.md](references/hmr-examples.md) for the full terminal HTML client.
+
+### 5. Advanced: HTTP/2
+
+Enable HTTP/2 with TLS:
+
+```typescript
+import { readFileSync } from 'fs';
+
+const server = Bun.serve({
+  port: 3000,
+  tls: {
+    cert: readFileSync('./localhost.pem'),
+    key: readFileSync('./localhost-key.pem'),
+  },
+  http: {
+    // Enable HTTP/2
+    http2: true,
+  },
+  fetch: app.fetch,
+});
+
+console.log(`🔒 HTTP/2 server at https://localhost:${server.port}`);
+```
+
+### 6. Advanced: WebSocket Pause/Resume (Bun 1.4.1+)
+
+Control WebSocket message flow:
+
+```typescript
+const server = Bun.serve({
+  port: 3000,
+  fetch(req, server) {
+    return server.upgrade(req);
+  },
+
+  websocket: {
+    open(ws) {
+      // Send data rapidly
+      const interval = setInterval(() => {
+        if (!ws.isPaused) {
+          ws.send(JSON.stringify({ tick: Date.now() }));
+        }
+      }, 100);
+
+      ws.data.interval = interval;
+    },
+
+    close(ws) {
+      clearInterval(ws.data.interval);
+    },
+
+    // Pause is called automatically when the client can't keep up
+    pause(ws) {
+      console.log('Client paused — backpressure');
+    },
+
+    // Resume when client catches up
+    resume(ws) {
+      console.log('Client resumed');
+    },
+  },
+});
+```
+
+### 7. Environment Configuration
 
 Create `.env.development`:
-
 ```bash
 # Server
 PORT=3000
@@ -304,13 +335,9 @@ NODE_ENV=development
 
 # API
 API_URL=http://localhost:3000/api
-
-# Features
-ENABLE_HMR=true
 ```
 
 Create `.env.production`:
-
 ```bash
 # Server
 PORT=8080
@@ -318,20 +345,16 @@ NODE_ENV=production
 
 # API
 API_URL=https://api.example.com
-
-# Features
-ENABLE_HMR=false
 ```
 
 Load environment in `server.ts`:
-
 ```typescript
 // Environment is loaded automatically by Bun
 const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 3000;
 ```
 
-### 7. Update package.json Scripts
+### 8. Update package.json Scripts
 
 Add development scripts:
 
@@ -348,15 +371,14 @@ Add development scripts:
 ```
 
 **Script explanations:**
-- `dev`: Run with hot reload (restarts on file changes)
+- `dev`: Run with HMR (auto-reloads on file changes)
 - `dev:watch`: Watch mode (faster, but doesn't reload on crash)
 - `start`: Production mode
 - `build`: Build frontend for production
 
-### 8. Configure TypeScript
+### 9. Configure TypeScript
 
 Update `tsconfig.json`:
-
 ```json
 {
   "compilerOptions": {
@@ -365,7 +387,7 @@ Update `tsconfig.json`:
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -380,10 +402,9 @@ Update `tsconfig.json`:
 }
 ```
 
-### 9. Create Project Structure
+### 10. Create Project Structure
 
 Generate complete project structure:
-
 ```
 project/
 ├── server.ts              # Development server
@@ -402,32 +423,6 @@ project/
 └── README.md
 ```
 
-### 10. Advanced: HTTPS for Local Development
-
-For HTTPS support (needed for some browser APIs):
-
-```typescript
-import { readFileSync } from 'fs';
-
-const server = Bun.serve({
-  port: 3000,
-  tls: {
-    cert: readFileSync('./localhost.pem'),
-    key: readFileSync('./localhost-key.pem'),
-  },
-  fetch: app.fetch,
-});
-
-console.log(`🔒 HTTPS server at https://localhost:${server.port}`);
-```
-
-Generate certificates with:
-```bash
-# Install mkcert first: brew install mkcert
-mkcert -install
-mkcert localhost 127.0.0.1 ::1
-```
-
 ### 11. Proxy Configuration (for existing backends)
 
 If user needs to proxy API requests to another server:
@@ -442,7 +437,7 @@ app.all('/api/*', async (c) => {
 
   const response = await fetch(backendUrl, {
     method: c.req.method,
-    headers: c.req.raw.headers,
+    headers: c.raw.headers,
     body: c.req.method !== 'GET' ? await c.req.raw.text() : undefined,
   });
 
@@ -458,14 +453,14 @@ app.all('/api/*', async (c) => {
 After creation, guide user to test:
 
 ```bash
-# 1. Start dev server
-bun run dev
+# 1. Start dev server with HMR
+bun run --hot server.ts
 
 # 2. Open browser
 open http://localhost:3000
 
 # 3. Make a change to src/App.tsx
-# 4. Verify HMR reloads the page
+# 4. Verify HMR updates the page automatically
 
 # 5. Test API endpoints
 curl http://localhost:3000/api/health
@@ -475,34 +470,27 @@ curl http://localhost:3000/api/health
 
 ### HMR not working
 
-```typescript
-// Check if WebSocket connection is established
-// Open browser console and look for:
-// "HMR client connected"
+```bash
+# Check server is running with --hot flag
+bun run --hot server.ts
 
-// If not, verify:
-// 1. Port is correct
-// 2. No firewall blocking WebSocket
-// 3. Server is running with --hot flag
+# Verify no firewall blocking port 3000
+# Check browser console for errors
 ```
 
 ### Port already in use
 
 ```bash
 # Find process using port 3000
-lsof -ti:3000
-
-# Kill the process
-kill -9 $(lsof -ti:3000)
+Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Stop-Process -Force
 
 # Or use a different port
-PORT=3001 bun run dev
+PORT=3001 bun run --hot server.ts
 ```
 
 ### CORS issues
 
 Add CORS headers to server:
-
 ```typescript
 app.use('*', cors({
   origin: 'http://localhost:3000',
@@ -512,10 +500,11 @@ app.use('*', cors({
 
 ## Performance Tips
 
-1. **Use --hot for development**: Faster than --watch for most cases
-2. **Minimize file watcher scope**: Watch only src/ directory
+1. **Use `--hot` for development**: Built-in HMR is faster than custom implementations
+2. **Minimize file watcher scope**: `--hot` watches the current directory by default
 3. **Use HTTP/2**: Enable for faster parallel loading
 4. **Cache static assets**: Add Cache-Control headers
+5. **Use backpressure**: Bun's native streams auto-pause when clients slow down
 
 ```typescript
 app.use('/assets/*', async (c, next) => {
@@ -527,13 +516,13 @@ app.use('/assets/*', async (c, next) => {
 ## Completion Checklist
 
 - ✅ Development server created
-- ✅ HMR configured and tested
+- ✅ HMR configured (using `--hot`)
 - ✅ Environment variables set up
 - ✅ Package.json scripts added
 - ✅ Project structure organized
 - ✅ TypeScript configured
 - ✅ Browser successfully connects
-- ✅ File changes trigger reload
+- ✅ File changes trigger HMR reload
 
 ## Next Steps
 
@@ -542,4 +531,8 @@ Suggest to the user:
 2. Set up ESLint and Prettier
 3. Configure path aliases in tsconfig.json
 4. Add development vs production builds
-5. Consider adding bun-test for testing
+5. Consider adding `bun-test` for testing
+6. Explore `Bun.Terminal` for terminal-based apps
+7. Use `bun build --compile` for standalone distribution
+
+For detailed implementations, see the reference files linked above.

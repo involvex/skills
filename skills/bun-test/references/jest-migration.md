@@ -16,6 +16,8 @@ Bun test provides Jest-compatible APIs for seamless migration:
 | `jest.spyOn()` | `spyOn()` | Different import |
 | Snapshot testing | ✅ Identical | Fully supported |
 | Async testing | ✅ Identical | Fully supported |
+| `jest.useFakeTimers()` | `useFakeTimers()` | Different import (Bun 1.3.4+) |
+| `jest.retryTimes()` | `test.retry()` | Per-test retry (Bun 1.3.9+) |
 
 ## Migration Steps
 
@@ -64,6 +66,7 @@ coverage = true
 coverageDir = "coverage"
 coverageThreshold = 80
 timeout = 5000
+parallel = true
 ```
 
 ### 4. Update package.json
@@ -89,7 +92,8 @@ timeout = 5000
   "scripts": {
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "test:parallel": "bun test --parallel"
   }
 }
 ```
@@ -99,60 +103,68 @@ Remove Jest dependencies:
 bun remove jest @types/jest ts-jest
 ```
 
-## Jest Features Not Yet Supported
+## Feature Comparison
 
-### Module Mocking
+| Feature | Jest | Bun Test |
+|---------|------|----------|
+| Speed | Baseline | 5-10x faster |
+| Parallel execution | Worker pools | Native `--parallel` |
+| Snapshot testing | ✅ | ✅ |
+| Mock functions | `jest.fn()` | `mock()` |
+| Module mocking | `jest.mock()` | Manual/DI patterns |
+| Fake timers | `jest.useFakeTimers()` | `useFakeTimers()` (1.3.4+) |
+| Coverage | ✅ | ✅ |
+| Watch mode | ✅ | ✅ |
+| Retry | Limited | `test.retry()` (1.3.9+) |
+| Sharding | `--shard` | `--shard` (1.3.13+) |
 
-Jest's `jest.mock()` for entire modules has limited support:
+## New Bun Test Features
 
-**Jest (advanced mocking):**
-```typescript
-jest.mock('./api', () => ({
-  fetchUser: jest.fn(),
-}));
-```
+Take advantage of Bun-specific features:
 
-**Workaround in Bun:**
-```typescript
-// Use dependency injection or manual mocking
-import { mock } from 'bun:test';
-
-const mockFetchUser = mock();
-const api = { fetchUser: mockFetchUser };
-```
-
-### Fake Timers
-
-Jest's `jest.useFakeTimers()` is not yet available:
-
-**Workaround:**
-```typescript
-// Use manual time control
-let currentTime = Date.now();
-const originalDateNow = Date.now;
-
-beforeEach(() => {
-  Date.now = () => currentTime;
-});
-
-afterEach(() => {
-  Date.now = originalDateNow;
-});
-```
-
-## Performance Comparison
-
-Bun test is significantly faster:
+### Parallel Execution (Bun 1.3.13+)
 
 ```bash
-# Jest
-npm test  # ~15 seconds for 100 tests
+# Run all tests in parallel across CPU cores
+bun test --parallel
 
-# Bun
-bun test  # ~2 seconds for 100 tests
+# Run each file in isolation (separate process)
+bun test --isolate
 ```
 
-**7-10x faster execution!**
+### Sharding for CI (Bun 1.3.13+)
+
+```bash
+# Split tests across 4 CI runners
+bun test --shard=1/4  # Runner 1
+bun test --shard=2/4  # Runner 2
+bun test --shard=3/4  # Runner 3
+bun test --shard=4/4  # Runner 4
+```
+
+### Only-Failures Mode (Bun 1.3.1+)
+
+```bash
+# Run only tests that failed last time
+bun test --only-failures
+
+# Rerun failures up to N times
+bun test --rerun-failures=3
+```
+
+### Changed Files Only (Bun 1.3.13+)
+
+```bash
+# Run only tests affected by changed files
+bun test --changed
+```
+
+### Grep Filter (Bun 1.3.6+)
+
+```bash
+# Run tests matching a pattern
+bun test --grep="should handle"
+```
 
 ## Migration Checklist
 
@@ -164,5 +176,21 @@ bun test  # ~2 seconds for 100 tests
 - [ ] Update package.json scripts
 - [ ] Remove Jest dependencies
 - [ ] Run tests to verify
+- [ ] Enable `--parallel` for faster CI
 - [ ] Update CI/CD pipelines
 - [ ] Update documentation
+
+## Performance Comparison
+
+Bun test is significantly faster:
+
+```bash
+# Jest
+npm test  # ~15 seconds for 100 tests
+
+# Bun
+bun test  # ~2 seconds for 100 tests
+bun test --parallel  # ~0.5 seconds with parallelism
+```
+
+**5-10x faster execution, up to 30x with parallel!**

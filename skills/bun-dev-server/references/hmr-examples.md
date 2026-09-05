@@ -1,10 +1,42 @@
-# HMR Implementation Examples
+# HMR and Dev Server Patterns
 
-This document provides detailed examples of Hot Module Replacement (HMR) implementations for different frameworks and use cases with Bun.
+This document provides HMR implementation patterns for Bun development servers.
 
-## Basic WebSocket HMR
+## Built-in HMR (Recommended, Bun 1.4+)
 
-The simplest HMR implementation using WebSocket:
+The recommended approach is to use `bun run --hot`, which handles HMR automatically:
+
+```bash
+# Start dev server with built-in HMR
+bun run --hot server.ts
+```
+
+**No custom WebSocket code needed.** Bun watches for file changes and triggers browser reloads automatically. React Fast Refresh works out of the box.
+
+### Why built-in HMR?
+
+- **Zero setup**: No WebSocket server, no file watcher, no client-side script
+- **React Fast Refresh**: Preserves component state during edits
+- **CSS HMR**: Styles update without full reload
+- **Automatic**: Works with `import.meta.hot` for framework-agnostic acceptance
+
+```typescript
+// In any module — runs when the module is hot-updated
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    console.log('Module updated');
+  });
+
+  import.meta.hot.dispose((data) => {
+    // Cleanup before the module is replaced
+    console.log('Cleaning up before update');
+  });
+}
+```
+
+## Legacy: Custom WebSocket HMR
+
+If you need custom HMR behavior, here is the manual pattern:
 
 ```typescript
 // server.ts
@@ -53,92 +85,53 @@ for await (const event of watcher) {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === 'reload') {
-      console.log(`Reloading due to change in ${data.file}`);
       window.location.reload();
     }
   };
 </script>
 ```
 
-## React Fast Refresh
+> **Note**: This manual pattern is kept for reference and advanced use cases. Prefer `bun run --hot` for standard development workflows.
 
-Advanced HMR with React component preservation:
+## React Fast Refresh with Built-in HMR
+
+React Fast Refresh works automatically with `bun run --hot`:
+
+```tsx
+// App.tsx
+export default function App() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <button onClick={() => setCount(c => c + 1)}>
+      Count: {count}
+    </button>
+  );
+}
+```
+
+Edit the component — the counter state is preserved. No extra configuration needed.
+
+For manual control:
 
 ```typescript
-// hmr-client.tsx
-interface HMRMessage {
-  type: 'update' | 'reload';
-  modules?: string[];
-}
+if (import.meta.hot) {
+  import.meta.hot.accept((newModule) => {
+    // Replace the current module with the updated one
+  });
 
-class HMRClient {
-  private ws: WebSocket;
-  private pendingUpdates = new Set<string>();
-
-  constructor(port: number) {
-    this.ws = new WebSocket(`ws://localhost:${port}/_hmr`);
-    this.ws.onmessage = this.handleMessage.bind(this);
-    this.ws.onclose = () => {
-      console.log('HMR disconnected, reloading...');
-      setTimeout(() => window.location.reload(), 1000);
-    };
-  }
-
-  private async handleMessage(event: MessageEvent) {
-    const data: HMRMessage = JSON.parse(event.data);
-
-    if (data.type === 'reload') {
-      window.location.reload();
-      return;
-    }
-
-    if (data.type === 'update' && data.modules) {
-      for (const modulePath of data.modules) {
-        await this.hotUpdate(modulePath);
-      }
-    }
-  }
-
-  private async hotUpdate(modulePath: string) {
-    // Add cache-busting timestamp
-    const url = `${modulePath}?t=${Date.now()}`;
-
-    try {
-      // Dynamic import with timestamp
-      const module = await import(url);
-
-      // If it's a React component, trigger re-render
-      if (module.default?.$$typeof) {
-        this.refreshReactComponent(modulePath, module.default);
-      }
-    } catch (error) {
-      console.error(`Failed to hot update ${modulePath}:`, error);
-      window.location.reload();
-    }
-  }
-
-  private refreshReactComponent(modulePath: string, Component: any) {
-    // Find all instances of this component in the tree
-    // and trigger a re-render
-
-    // This is a simplified version - real React Fast Refresh
-    // uses the react-refresh runtime
-    const event = new CustomEvent('hmr:component-update', {
-      detail: { modulePath, Component }
-    });
-    window.dispatchEvent(event);
-  }
-}
-
-// Initialize HMR client
-if (import.meta.env.DEV) {
-  new HMRClient(3000);
+  import.meta.hot.dispose((data) => {
+    // Preserve state across updates
+    data.count = count;
+  });
 }
 ```
 
 ## CSS HMR (No Page Reload)
 
-Update CSS without full page reload:
+CSS updates automatically with `bun run --hot` — no custom code needed.
+
+For manual CSS injection:
 
 ```typescript
 // server.ts
@@ -147,7 +140,6 @@ const cssWatcher = Bun.file.watch("./src/**/*.css");
 for await (const event of cssWatcher) {
   if (event.kind === "change") {
     const cssContent = await Bun.file(event.path).text();
-
     for (const client of clients) {
       client.send(JSON.stringify({
         type: "css-update",
@@ -163,103 +155,150 @@ for await (const event of cssWatcher) {
 // Client-side CSS injection
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
-
   if (data.type === 'css-update') {
-    // Find or create style tag for this file
     let styleTag = document.querySelector(`style[data-path="${data.path}"]`);
-
     if (!styleTag) {
       styleTag = document.createElement('style');
       styleTag.setAttribute('data-path', data.path);
       document.head.appendChild(styleTag);
     }
-
     styleTag.textContent = data.content;
-    console.log(`✨ Updated CSS: ${data.path}`);
   }
 };
 ```
 
-## Module-Level HMR
+## Server-Side Code Reload
 
-For non-React modules (utilities, stores, etc.):
+Reload server-side code without dropping connections:
 
 ```typescript
-// store.ts
-let state = { count: 0 };
+// hot-server.ts
+let requestHandler = (await import('./routes.ts')).default;
 
-export function getState() {
-  return state;
-}
+const server = Bun.serve({
+  port: 3000,
+  async fetch(request) {
+    return requestHandler(request);
+  },
+});
 
-export function setState(newState: typeof state) {
-  state = newState;
-}
-
-// HMR preservation
-if (import.meta.hot) {
-  import.meta.hot.accept((newModule) => {
-    console.log('Store updated');
-    // Preserve state across updates
-  });
-
-  import.meta.hot.dispose((data) => {
-    // Save state before reload
-    data.state = state;
-  });
+// Watch server code
+const serverWatcher = Bun.file.watch("./routes.ts");
+for await (const event of serverWatcher) {
+  console.log('🔄 Reloading server code...');
+  const newModule = await import(`./routes.ts?t=${Date.now()}`);
+  requestHandler = newModule.default;
+  console.log('✅ Server code reloaded');
 }
 ```
 
-## Smart File Watching
+## Terminal App with Bun.Terminal (Bun 1.3.5+)
 
-Only reload affected modules:
+Drive a terminal emulator via WebSocket:
 
 ```typescript
-// dependency-graph.ts
-class DependencyGraph {
-  private graph = new Map<string, Set<string>>();
-
-  addDependency(parent: string, child: string) {
-    if (!this.graph.has(parent)) {
-      this.graph.set(parent, new Set());
+// server.ts
+const server = Bun.serve({
+  port: 3000,
+  fetch(req, server) {
+    const url = new URL(req.url);
+    if (url.pathname === '/terminal') {
+      return server.upgrade(req);
     }
-    this.graph.get(parent)!.add(child);
-  }
+    return new Response(Bun.file('public/terminal.html'));
+  },
 
-  getAffectedModules(changedFile: string): Set<string> {
-    const affected = new Set<string>();
-    const queue = [changedFile];
+  websocket: {
+    open(ws) {
+      const proc = Bun.spawn(['bash'], {
+        terminal: {
+          cols: 80,
+          rows: 24,
+          data(term, data) {
+            ws.send(data);
+          },
+        },
+      });
 
-    while (queue.length > 0) {
-      const file = queue.shift()!;
-      affected.add(file);
+      ws.data.pty = proc;
 
-      // Find all modules that import this file
-      for (const [parent, children] of this.graph) {
-        if (children.has(file) && !affected.has(parent)) {
-          queue.push(parent);
+      ws.addEventListener('message', (event) => {
+        proc.terminal?.write(event.data as string);
+      });
+    },
+
+    close(ws) {
+      ws.data.pty?.kill();
+    },
+  },
+});
+```
+
+```html
+<!-- public/terminal.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bun Terminal</title>
+  <style>
+    body { background: #1a1a1a; color: #fff; font-family: monospace; }
+    #terminal { padding: 20px; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="terminal">Connecting...</div>
+  <script>
+    const ws = new WebSocket('ws://localhost:3000/terminal');
+    const terminal = document.getElementById('terminal');
+
+    ws.onmessage = (event) => {
+      terminal.textContent += event.data;
+    };
+
+    document.addEventListener('keydown', (e) => {
+      ws.send(e.key);
+    });
+  </script>
+</body>
+</html>
+```
+
+## WebSocket Pause/Resume (Bun 1.4.1+)
+
+Handle backpressure in WebSocket connections:
+
+```typescript
+const server = Bun.serve({
+  port: 3000,
+  fetch(req, server) {
+    return server.upgrade(req);
+  },
+
+  websocket: {
+    open(ws) {
+      // Rapid data producer
+      const interval = setInterval(() => {
+        if (!ws.isPaused) {
+          ws.send(JSON.stringify({ tick: Date.now() }));
         }
-      }
-    }
+      }, 100);
+      ws.data.interval = interval;
+    },
 
-    return affected;
-  }
-}
+    close(ws) {
+      clearInterval(ws.data.interval);
+    },
 
-const graph = new DependencyGraph();
+    pause(ws) {
+      console.log('Client buffer full — pausing');
+      // Bun automatically pauses when the client can't keep up
+    },
 
-// Build graph from imports
-const watcher = Bun.file.watch("./src");
-for await (const event of watcher) {
-  const affected = graph.getAffectedModules(event.path);
-
-  for (const client of clients) {
-    client.send(JSON.stringify({
-      type: "update",
-      modules: Array.from(affected)
-    }));
-  }
-}
+    resume(ws) {
+      console.log('Client caught up — resuming');
+    },
+  },
+});
 ```
 
 ## Error Overlay
@@ -272,17 +311,9 @@ export function showErrorOverlay(error: Error) {
   const overlay = document.createElement('div');
   overlay.id = 'error-overlay';
   overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    color: #fff;
-    padding: 20px;
-    font-family: monospace;
-    z-index: 999999;
-    overflow: auto;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;
+    font-family: monospace; z-index: 999999; overflow: auto;
   `;
 
   overlay.innerHTML = `
@@ -300,11 +331,6 @@ window.addEventListener('error', (event) => {
   if (import.meta.env.DEV) {
     showErrorOverlay(event.error);
   }
-});
-
-// HMR success - remove overlay
-window.addEventListener('hmr:success', () => {
-  document.getElementById('error-overlay')?.remove();
 });
 ```
 
@@ -340,38 +366,57 @@ let app = new App({
 
 if (import.meta.hot) {
   import.meta.hot.accept();
-
   import.meta.hot.dispose(() => {
     app.$destroy();
   });
 }
 ```
 
-## Server-Side Code Reload
+## Smart File Watching
 
-Reload server-side code without dropping connections:
+Only reload affected modules:
 
 ```typescript
-// hot-server.ts
-let requestHandler = (await import('./routes.ts')).default;
+// dependency-graph.ts
+class DependencyGraph {
+  private graph = new Map<string, Set<string>>();
 
-const server = Bun.serve({
-  port: 3000,
-  async fetch(request) {
-    return requestHandler(request);
-  },
-});
+  addDependency(parent: string, child: string) {
+    if (!this.graph.has(parent)) {
+      this.graph.set(parent, new Set());
+    }
+    this.graph.get(parent)!.add(child);
+  }
 
-// Watch server code
-const serverWatcher = Bun.file.watch("./routes.ts");
-for await (const event of serverWatcher) {
-  console.log('🔄 Reloading server code...');
+  getAffectedModules(changedFile: string): Set<string> {
+    const affected = new Set<string>();
+    const queue = [changedFile];
 
-  // Re-import with cache bust
-  const newModule = await import(`./routes.ts?t=${Date.now()}`);
-  requestHandler = newModule.default;
+    while (queue.length > 0) {
+      const file = queue.shift()!;
+      affected.add(file);
 
-  console.log('✅ Server code reloaded');
+      for (const [parent, children] of this.graph) {
+        if (children.has(file) && !affected.has(parent)) {
+          queue.push(parent);
+        }
+      }
+    }
+
+    return affected;
+  }
+}
+
+const graph = new DependencyGraph();
+const watcher = Bun.file.watch("./src");
+for await (const event of watcher) {
+  const affected = graph.getAffectedModules(event.path);
+  for (const client of clients) {
+    client.send(JSON.stringify({
+      type: "update",
+      modules: Array.from(affected)
+    }));
+  }
 }
 ```
 

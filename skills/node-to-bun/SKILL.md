@@ -1,7 +1,7 @@
 ---
 name: node-to-bun
 description: Migrate Node.js projects to Bun with compatibility analysis. Use when converting existing npm/pnpm/yarn projects to Bun or auditing dependencies for Bun compatibility.
-compatibility: Requires Bun 1.0+
+compatibility: Requires Bun 1.4+
 allowed-tools: ["Bash", "Read", "Grep", "Write"]
 metadata:
   author: daleseo
@@ -11,7 +11,19 @@ metadata:
 
 # Node.js to Bun Migration
 
-You are assisting with migrating an existing Node.js project to Bun. This involves analyzing dependencies, updating configurations, and ensuring compatibility.
+Migrate an existing Node.js project to Bun 1.4+. This involves analyzing dependencies, updating configurations, and leveraging Bun's native APIs to replace npm packages.
+
+## What's new in Bun 1.4
+
+Bun 1.4 dramatically expands what you can drop in from npm — and what you can delete entirely:
+
+- **Playwright** runs on Bun via `connectOverCDP()` and `playwright test`
+- **vitest** runs under Bun with `--coverage`, threads, and forks pools
+- **Next.js 16** works with `bun --bun next build` and Turbopack
+- **OpenTelemetry** http/fs instrumentation works with `node:http` and `node:fs`
+- **dd-trace** and `@datadog/pprof` work via V8 C++ API implementations
+- **Node.js 26.3.0** compatibility: +1,517 newly passing tests
+- **3× faster `bun:ffi`** for native bindings
 
 ## Migration Workflow
 
@@ -41,17 +53,37 @@ Read `package.json` to understand the project structure.
 cat package.json
 ```
 
-**Check for known incompatible native modules:**
+**Check for packages that Bun 1.4 can replace entirely:**
 
-Common problematic packages (check against current dependencies):
+| npm Package | Bun 1.4 Replacement | Notes |
+|---|---|---|
+| `sharp` | `Bun.Image` | Built-in image processing. JPEG, PNG, WebP, GIF, BMP, HEIC, AVIF, TIFF. 1.38× faster than sharp on resize. |
+| `puppeteer` / `playwright` | `Bun.WebView` | Headless browser automation built in. Navigate, click, screenshot, CDP escape hatch. No install needed on macOS (uses system WebKit). |
+| `marked` / `markdown-it` / `showdown` | `Bun.markdown` | Built-in CommonMark parser. `.html()`, `.react()`, `.render()` for terminal output. |
+| `node-cron` / `cron` | `Bun.cron()` | OS-level cron (crontab/launchd/Task Scheduler) + in-process scheduler. Cloudflare Workers-style `scheduled()` handler. |
+| `node-pty` | `Bun.Terminal` | Built-in PTY. Drive `bash`, `vim`, `htop` from JS without native addons. |
+| `ioredis` / `redis` | `Bun.redis` | Built-in Redis client with Pub/Sub. |
+| `pg` / `mysql` / `mysql2` | `Bun.SQL` | Unified SQL API supporting PostgreSQL, MySQL, and SQLite. |
+| `tar` / `archiver` / `decompress` | `Bun.Archive` | Create/extract tar.gz archives natively. |
+| `json5` / `json5-promised` | `Bun.JSON5` | Built-in JSON5 parser. |
+| `jsonl-parse` / `ndjson` | `Bun.JSONL` | Built-in JSONL parser. |
+| `strip-ansi` / `wrap-ansi` | `Bun.stripANSI` / `Bun.wrapAnsi` | SIMD-accelerated. 33–88× faster than `wrap-ansi`. |
+| `dotenv` | Built-in | Bun loads `.env` files automatically. |
+| `concurrently` / `npm-run-all` | `bun run --parallel` | Run multiple scripts concurrently with name-prefixed output. |
+| `nodemon` / `tsx` / `ts-node` | `bun run --hot` / `bun run --watch` | Built-in file watching and TypeScript execution. |
+| `jest` / `vitest` | `bun test` | Built-in test runner. 3–10× faster than Jest. Parallel, isolated, sharded. |
+| `esbuild` / `swc` / `webpack` | `Bun.build()` | Native bundler. Up to 3× faster than esbuild. |
+| `vite` | `bun build` + `bun run --hot` | Bun's bundler + dev server replaces Vite for many use cases. |
+| `tsc` (standalone) | Built-in | Bun ships TypeScript compiler natively. |
+
+**Known incompatible native modules (check against current dependencies):**
 
 - `bcrypt` → Use `bcryptjs` or `@node-rs/bcrypt` instead
-- `sharp` → Bun has native support, but may need version check
+- `sharp` → Use `Bun.Image` (see above)
 - `node-canvas` → Limited support, check version compatibility
 - `sqlite3` → Use `bun:sqlite` instead
 - `node-gyp` dependent packages → May require alternative pure JS versions
 - `fsevents` → macOS-specific, usually optional dependency
-- `esbuild` → Bun has built-in bundler, may be redundant
 
 **Check workspace configuration** (for monorepos):
 ```bash
@@ -75,7 +107,18 @@ Create a migration report file `BUN_MIGRATION_REPORT.md`:
 ## Dependency Analysis
 
 ### ✅ Compatible Dependencies
-[List dependencies that are Bun-compatible]
+[List dependencies that work without changes]
+
+### 🔄 Replaceable with Bun Native APIs
+[List npm packages that Bun 1.4 replaces]
+
+| npm Package | Bun Replacement | Savings |
+|---|---|---|
+| sharp | Bun.Image | ~1 dependency, faster |
+| marked | Bun.markdown | ~1 dependency |
+| node-cron | Bun.cron() | ~1 dependency |
+| ioredis | Bun.redis | ~1 dependency |
+| pg/mysql | Bun.SQL | ~1-2 dependencies |
 
 ### ⚠️ Potentially Incompatible Dependencies
 [List dependencies that may have issues]
@@ -83,32 +126,32 @@ Create a migration report file `BUN_MIGRATION_REPORT.md`:
 **Recommended Actions:**
 - [Specific migration steps for each incompatible dependency]
 
-### 🔄 Recommended Replacements
-[List suggested package replacements]
-
 ## Configuration Changes Needed
 
 ### package.json
 - [ ] Update scripts to use `bun` instead of `npm`/`yarn`
+- [ ] Remove replaceable dependencies
 - [ ] Review and update `engines` field
 - [ ] Check `type` field (ESM vs CommonJS)
 
 ### tsconfig.json
 - [ ] Update `moduleResolution` to `"bundler"`
-- [ ] Add `bun-types` to types array
+- [ ] Add `@types/bun` to types array
 - [ ] Set `allowImportingTsExtensions` to `true`
+- [ ] Add `verbatimModuleSyntax` and `noImplicitOverride`
 
 ### Build Configuration
-- [ ] Review webpack/rollup/esbuild config (may use Bun bundler)
-- [ ] Update test runner config (use Bun test instead of Jest)
+- [ ] Review webpack/rollup/esbuild config (may use Bun.build)
+- [ ] Update test runner config (use Bun test)
 
 ## Migration Steps
 
 1. Install Bun dependencies
 2. Update configuration files
-3. Run tests to verify compatibility
-4. Update CI/CD pipelines
-5. Update documentation
+3. Replace npm packages with Bun native APIs
+4. Run tests to verify compatibility
+5. Update CI/CD pipelines
+6. Update documentation
 
 ## Risk Assessment
 
@@ -161,9 +204,17 @@ git commit -m "Backup before Bun migration"
 ```json
 {
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.0"
   }
 }
+```
+
+**Remove replaceable dependencies:**
+```bash
+# Remove packages that Bun replaces
+bun remove sharp marked node-cron ioredis pg mysql
+bun remove concurrently jest ts-node nodemon dotenv
+bun remove tar archiver node-pty redis json5
 ```
 
 **For libraries, add exports field** if not present:
@@ -180,7 +231,62 @@ git commit -m "Backup before Bun migration"
 }
 ```
 
-### 6. Update tsconfig.json
+### 6. Replace npm Packages with Bun Native APIs
+
+**Before:**
+```typescript
+// Image processing
+import sharp from 'sharp';
+await sharp('photo.jpg').resize(1024, 1024).toFile('thumb.jpg');
+
+// Markdown parsing
+import { marked } from 'marked';
+const html = marked.parse('# Hello');
+
+// Cron jobs
+import cron from 'node-cron';
+cron.schedule('*/5 * * * *', doWork);
+
+// Redis
+import Redis from 'ioredis';
+const redis = new Redis();
+
+// SQL
+import { Pool } from 'pg';
+const pool = new Pool();
+
+// PTY
+import pty from 'node-pty';
+const proc = pty.spawn('bash', [], { cols: 80, rows: 24 });
+```
+
+**After:**
+```typescript
+// Image processing — Bun.Image (1.3.14+)
+await Bun.file("photo.jpg")
+  .image()
+  .resize(1024, 1024)
+  .toFile("thumb.jpg");
+
+// Markdown — Bun.markdown (1.3.8+)
+const html = Bun.markdown.html("# Hello");
+
+// Cron — Bun.cron() (1.3.11+)
+await Bun.cron("./worker.ts", "*/5 * * * *", "my-job");
+
+// Redis — Bun.redis (1.2.9+)
+const redis = new Bun.Redis("redis://localhost:6379");
+
+// SQL — Bun.SQL (1.2.21+)
+const sql = Bun.sql`postgres://localhost/mydb`;
+
+// PTY — Bun.Terminal (1.3.5+)
+const proc = Bun.spawn(['bash'], {
+  terminal: { cols: 80, rows: 24, data(term, data) {} }
+});
+```
+
+### 7. Update tsconfig.json
 
 **Read current tsconfig:**
 ```bash
@@ -195,7 +301,7 @@ cat tsconfig.json
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "lib": ["ES2022"],
     "jsx": "react-jsx",
     "strict": true,
@@ -203,18 +309,22 @@ cat tsconfig.json
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true
   }
 }
 ```
 
 **Key changes explained:**
 - `moduleResolution: "bundler"` → Uses Bun's module resolution
-- `types: ["bun-types"]` → Adds Bun's TypeScript definitions
+- `types: ["@types/bun"]` → Adds Bun's TypeScript definitions (replaces `bun-types`)
 - `allowImportingTsExtensions: true` → Allows importing `.ts` files directly
 - `noEmit: true` → Bun runs TypeScript directly, no compilation needed
+- `verbatimModuleSyntax: true` → Cleaner ESM/CJS interop (TypeScript 5.x)
+- `noImplicitOverride: true` → Safer class inheritance
 
-### 7. Handle Workspace Configuration
+### 8. Handle Workspace Configuration
 
 **For monorepos with workspaces:**
 
@@ -237,7 +347,7 @@ Bun supports the same workspace syntax as npm/yarn/pnpm.
 find . -name "package.json" -not -path "*/node_modules/*"
 ```
 
-### 8. Install Dependencies with Bun
+### 9. Install Dependencies with Bun
 
 **Remove old lockfiles:**
 ```bash
@@ -256,7 +366,7 @@ This creates `bun.lockb` (Bun's binary lockfile).
 bun install --frozen-lockfile  # Equivalent to npm ci
 ```
 
-### 9. Update Test Configuration
+### 10. Update Test Configuration
 
 **If using Jest, migrate to Bun test:**
 
@@ -267,6 +377,9 @@ Create `bunfig.toml` for test configuration:
 preload = ["./tests/setup.ts"]
 coverage = true
 coverageThreshold = 0.8
+
+# New in Bun 1.3.13+
+parallel = true
 ```
 
 **Update test files:**
@@ -275,11 +388,12 @@ coverageThreshold = 0.8
 
 **Jest compatibility notes:**
 - Most Jest APIs work out of the box
-- `jest.mock()` → Use `mock()` from `bun:test`
+- `jest.fn()` → Use `mock()` or `vi.fn()` from `bun:test`
+- `jest.useFakeTimers()` → Use `useFakeTimers()` from `bun:test`
 - Snapshot testing works the same
 - Coverage reports may differ slightly
 
-### 10. Update Environment Configuration
+### 11. Update Environment Configuration
 
 **Check .env files:**
 ```bash
@@ -292,7 +406,7 @@ Bun loads `.env` files automatically (same as dotenv package).
 - Remove `require('dotenv').config()`
 - Bun loads `.env` by default
 
-### 11. Update Build Configuration
+### 12. Update Build Configuration
 
 **If using webpack/rollup/esbuild:**
 
@@ -319,7 +433,7 @@ await Bun.build({
 }
 ```
 
-### 12. Update CI/CD Configuration
+### 13. Update CI/CD Configuration
 
 **GitHub Actions example:**
 
@@ -332,29 +446,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - name: Run tests
-        run: bun test
+      - run: bun test --parallel
 
       - name: Type check
-        run: bun run typecheck
+        run: bun run --bun tsc --noEmit
 
       - name: Build
         run: bun run build
 ```
 
-### 13. Verification Steps
+### 14. Verify Migration with New Bun 1.4 Features
 
-Run these commands to verify migration:
+Run these commands to verify migration and leverage new features:
 
 ```bash
 # 1. Check dependencies installed correctly
@@ -363,55 +473,64 @@ bun install
 # 2. Run type checking
 bun run --bun tsc --noEmit
 
-# 3. Run tests
-bun test
+# 3. Run tests (with parallel execution)
+bun test --parallel
 
-# 4. Try development server
-bun run dev
+# 4. Try development server with HMR
+bun run --hot src/index.ts
 
 # 5. Test production build
 bun run build
+
+# 6. Try new Bun 1.4 APIs
+bun repl
+# > Bun.Image
+# > Bun.WebView
+# > Bun.markdown
+# > Bun.cron
 ```
 
-### 14. Update Documentation
+### 15. Replace Common npm Patterns with Bun 1.4 APIs
 
-Create or update these documentation sections:
-
-**README.md:**
-```markdown
-## Prerequisites
-
-- [Bun](https://bun.sh) 1.0 or higher
-
-## Installation
+After migration, audit the codebase for Bun 1.4 replacement opportunities:
 
 ```bash
-bun install
+# Find sharp usage → replace with Bun.Image
+grep -r "import.*sharp" src/
+
+# Find marked/markdown-it → replace with Bun.markdown
+grep -r "import.*marked\|markdown-it\|showdown" src/
+
+# Find node-cron → replace with Bun.cron()
+grep -r "import.*node-cron\|from 'cron'" src/
+
+# Find ioredis → replace with Bun.redis
+grep -r "import.*ioredis\|from 'redis'" src/
+
+# Find pg/mysql → replace with Bun.SQL
+grep -r "import.*pg\|from 'pg'\|from 'mysql'" src/
+
+# Find node-pty → replace with Bun.Terminal
+grep -r "import.*node-pty\|from 'node-pty'" src/
 ```
 
-## Development
+## Bun 1.4 Compatibility Matrix
 
-```bash
-bun run dev
-```
-
-## Testing
-
-```bash
-bun test
-```
-```
-
-**CHANGELOG.md entry:**
-```markdown
-## [Version] - [Date]
-
-### Changed
-- Migrated from Node.js/npm to Bun
-- Updated all dependencies to Bun-compatible versions
-- Replaced [specific packages] with [alternatives]
-- Updated TypeScript configuration for Bun
-```
+| Framework/Tool | Bun 1.4 Status | Notes |
+|---|---|---|
+| **Playwright** | ✅ Runs on Bun | `connectOverCDP()`, Chromium on Windows |
+| **vitest** | ✅ Runs on Bun | `--coverage`, threads, forks pools |
+| **Next.js 16** | ✅ Works | `bun --bun next build` with Turbopack |
+| **OpenTelemetry** | ✅ Works | `@opentelemetry/instrumentation-http/fs` |
+| **dd-trace** | ✅ Works | `@datadog/pprof` profiles continuously |
+| **Nuxt** | ✅ Works | HMR + Nuxt DevTools |
+| **testcontainers** | ✅ Works | `container.exec()` |
+| **@grpc/grpc-js** | ✅ Works | Servers behind Envoy |
+| **TypeORM** | ✅ Works | Decorator settings in tsconfig |
+| **nock** | ✅ Works | Intercepts `http` and `https` |
+| **Fastify inject()** | ✅ Works | `light-my-request` works too |
+| **happy-dom** | ✅ Works | No longer breaks `console.log` |
+| **piscina** | ✅ Works | Worker thread pool |
 
 ## Common Migration Issues & Solutions
 
@@ -448,8 +567,6 @@ Add to `package.json`:
   "type": "module"
 }
 ```
-
-Or use `.mts` extension for ES modules and `.cts` for CommonJS.
 
 ### Issue: Path Alias Resolution
 
@@ -496,16 +613,19 @@ import { describe, it, expect } from 'bun:test';
 
 Present this checklist to the user:
 
-- [ ] Bun installed and verified
+- [ ] Bun installed and verified (1.4+)
 - [ ] Dependency compatibility analyzed
 - [ ] Migration report reviewed
 - [ ] Current state backed up (git commit/branch)
+- [ ] Replaceable npm packages identified
 - [ ] `package.json` scripts updated
-- [ ] `tsconfig.json` configured for Bun
+- [ ] Replaceable dependencies removed
+- [ ] `tsconfig.json` configured for Bun 1.4
 - [ ] Old lockfiles removed
 - [ ] Dependencies installed with `bun install`
+- [ ] Bun native APIs replacing npm packages
 - [ ] Test configuration migrated
-- [ ] Tests passing with `bun test`
+- [ ] Tests passing with `bun test --parallel`
 - [ ] Build process verified
 - [ ] CI/CD updated for Bun
 - [ ] Documentation updated
@@ -520,10 +640,16 @@ After migration, help user verify performance improvements:
 time bun install  # Should be 3-10x faster than npm
 
 # Compare test execution
-time bun test     # Should be faster than Jest
+time bun test --parallel     # Should be faster than Jest
 
 # Compare startup time
-time bun run src/index.ts  # Should be 90% faster than ts-node
+time bun run src/index.ts  # Should be 50% faster on Windows
+
+# Try new native APIs
+bun repl
+# > Bun.Image("photo.jpg").resize(1024).webp().write("thumb.webp")
+# > Bun.markdown.html("# Hello **world**")
+# > Bun.cron.parse("*/15 * * * *")
 ```
 
 ## Rollback Procedure
@@ -544,8 +670,8 @@ npm install  # or yarn/pnpm
 ## Completion
 
 Once migration is complete, provide summary:
-- ✅ Migration status (success/partial/issues)
-- ✅ List of changes made
-- ✅ Performance improvements observed
-- ✅ Any remaining manual steps
-- ✅ Links to Bun documentation for ongoing development
+- Migration status (success/partial/issues)
+- List of npm packages replaced with Bun native APIs
+- Performance improvements observed
+- Any remaining manual steps
+- Links to Bun documentation for ongoing development
